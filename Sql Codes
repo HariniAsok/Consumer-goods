@@ -1,0 +1,140 @@
+SQL Codes
+
+Requests
+# 1 
+select distinct market from dim_customer
+where customer = "Atliq Exclusive"  and region = "APAC";
+
+# 2 
+SELECT X.A AS unique_product_2020, Y.B AS unique_products_2021, ROUND((B-A)*100/A, 2)
+AS percentage_chg
+FROM
+     (
+      (SELECT COUNT(DISTINCT(product_code)) AS A FROM fact_sales_monthly
+      WHERE fiscal_year = 2020) X,
+      (SELECT COUNT(DISTINCT(product_code)) AS B FROM fact_sales_monthly
+      WHERE fiscal_year = 2021) Y  );
+
+
+
+# 3 
+select segment , count(distinct product_code) as unique_counts
+from dim_product
+group by segment
+order by unique_counts desc;
+
+# 4 
+WITH CTE1 AS 
+	(SELECT P.segment AS A , COUNT(DISTINCT(FS.product_code)) AS B 
+    FROM dim_product P, fact_sales_monthly FS
+    WHERE P.product_code = FS.product_code
+    GROUP BY FS.fiscal_year, P.segment
+    HAVING FS.fiscal_year = "2020"),
+CTE2 AS
+    (
+	SELECT P.segment AS C , COUNT(DISTINCT(FS.product_code)) AS D 
+    FROM dim_product P, fact_sales_monthly FS
+    WHERE P.product_code = FS.product_code
+    GROUP BY FS.fiscal_year, P.segment
+    HAVING FS.fiscal_year = "2021" )     
+SELECT CTE1.A AS segment, CTE1.B AS product_count_2020, CTE2.D AS product_count_2021, (CTE2.D-CTE1.B) 
+AS difference  
+FROM CTE1, CTE2
+WHERE CTE1.A = CTE2.C ;
+
+#    OR
+
+with x as ( select p.segment,
+count(distinct s.product_code) as product_count_2020 from dim_product p
+ join fact_sales_monthly s on p.product_code = s.product_code where s.fiscal_year=2020 
+group by p.segment) ,
+ y as ( select p.segment,
+ count(distinct s.product_code) as product_count_2021 from dim_product p
+ join fact_sales_monthly s on p.product_code = s.product_code where s.fiscal_year=2021 
+ group by p.segment)
+ select x.segment , product_count_2020 ,product_count_2021,abs(x.product_count_2020-
+y.product_count_2021) as difference
+ from x join y on x.segment=y.segment 
+ order by difference desc;
+
+
+ # 5 
+SELECT F.product_code, P.product, F.manufacturing_cost 
+FROM fact_manufacturing_cost F JOIN dim_product P
+ON F.product_code = P.product_code
+WHERE manufacturing_cost
+IN (
+	SELECT MAX(manufacturing_cost) FROM fact_manufacturing_cost
+    UNION
+    SELECT MIN(manufacturing_cost) FROM fact_manufacturing_cost
+    ) 
+ORDER BY manufacturing_cost DESC ;
+
+
+# 6 
+select f.customer_code, c.customer, round(avg(pre_invoice_discount_pct)*100,2) as avg_discount_per 
+from  dim_customer c
+join fact_pre_invoice_deductions f using ( customer_code)
+where f.fiscal_year = "2021" and c.market = "India"
+group by f.customer_code, c.customer
+order by avg(pre_invoice_discount_pct) desc
+limit 5;
+
+# 7 
+select  monthname(s.date) as month, s.fiscal_year as year,
+round(sum(g.gross_price * s.sold_quantity),2) as gross_sales_amt
+from fact_gross_price g
+join fact_sales_monthly s using(product_code)
+join dim_customer  c  using(customer_code)
+where c.customer = "Atliq Exclusive"
+group by monthname(s.date), s.fiscal_year  ;
+
+
+# 8 
+select
+case
+when month(date) in (9,10,11) then "Q1"
+when month(date) in (12,01,02) then "Q2"
+when month(date) in (03,04,05) then "Q3"
+else "Q4"
+end as Quarters ,
+sum(sold_quantity) as total_quantity_sold
+from fact_sales_monthly
+where fiscal_year = 2020
+group by Quarters
+order by  total_quantity_sold desc;
+
+
+# 9 
+
+with x as (select c.channel,
+round(sum(g.gross_price*s.sold_quantity)/100000,2) as gross_sales_mln
+from fact_sales_monthly s
+join dim_customer c using(customer_code)
+join fact_gross_price g using(product_code)
+where s.fiscal_year=2021
+group by c.channel)
+select channel, gross_sales_mln,
+round((gross_sales_mln/(select sum(gross_sales_mln) from x))*100,2)
+ as pct from x
+order by gross_sales_mln desc; 
+
+
+# 10
+
+WITH x AS
+
+(
+SELECT P.division, S.product_code, P.product, SUM(S.sold_quantity) AS Total_sold_quantity,
+RANK() OVER(PARTITION BY P.division ORDER BY SUM(S.sold_quantity) DESC) AS 'Rank_Order'
+FROM dim_product P JOIN fact_sales_monthly S
+ON P.product_code = S.product_code
+WHERE S.fiscal_year = 2021
+GROUP BY P.division, S.product_code, P.product)
+ SELECT * FROM x
+WHERE Rank_Order IN (1,2,3) ORDER BY division, Rank_Order;
+
+
+
+
+
